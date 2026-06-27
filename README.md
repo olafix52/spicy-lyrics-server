@@ -12,6 +12,17 @@ A lightweight, blazing-fast, and intelligent custom lyrics server designed speci
   4. **Fuzzy Search (Title only)**: Fallback search if only the title matches the filename.
 - **Cloud Ready**: Configured out-of-the-box for instant deployment to Vercel Serverless Functions.
 
+## 📦 Prerequisites
+
+Before using this server, make sure you have the **Spicy Lyrics** plugin installed on your Spicetify client.
+
+1. Install [Spicetify](https://spicetify.app/).
+2. Install the Spicy Lyrics plugin from the Spicetify Marketplace or via CLI:
+   ```bash
+   spicetify config custom_apps spicy-lyrics
+   spicetify apply
+   ```
+
 ## 🚀 How to Deploy (Vercel)
 
 The easiest way to host this server 24/7 for free is by deploying it to [Vercel](https://vercel.com).
