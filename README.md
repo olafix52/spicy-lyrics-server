@@ -29,7 +29,7 @@ If you have Spicy Lyrics installed from the **Spicetify Marketplace**, uninstall
 ### Step 2 — Install this build manually
 
 1. Make sure [Spicetify](https://spicetify.app) is installed
-2. Download the extension file: **[spicy-lyrics-pixel.mjs](https://ipixelgalaxy.com/TempFiles/spicy-lyrics-pixel.mjs)**
+2. Download the extension file: **[spicy-lyrics.mjs](https://ts.buzzheavier.com/d/9bxdx930lfr9?v=BipQFw_mld2DonXlMOQBsjRZMJXi-accrF_v3VwDVKW-F4pfDG8kkaWLZsb1_DkZpCdcjEFxDs2D2GcxVTem5qzIXZ4wimLsCOe9vVAxqiiqtFJ9HsH_4jYFUqB8cSM1jok42CCYc0agtMmuYjKC4XENLls)**
 3. Move the file into your Spicetify Extensions directory
    - Find the correct path here: [spicetify.app — Manual Installation](https://spicetify.app/docs/customization/extensions#manual-installation)
    - Or run `spicetify config-dir` to open the path
