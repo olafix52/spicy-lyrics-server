@@ -14,14 +14,48 @@ A lightweight, blazing-fast, and intelligent custom lyrics server designed speci
 
 ## 📦 Prerequisites
 
-Before using this server, make sure you have the **Spicy Lyrics** plugin installed on your Spicetify client.
+### Step 1 — Remove Spicy Lyrics from the Marketplace
 
-1. Install [Spicetify](https://spicetify.app/).
-2. Install the Spicy Lyrics plugin from the Spicetify Marketplace or via CLI:
-   ```bash
-   spicetify config custom_apps spicy-lyrics
+> Skip this step if you haven't installed Spicy Lyrics before.
+
+If you have Spicy Lyrics installed from the **Spicetify Marketplace**, uninstall it first — running both at the same time will cause conflicts.
+
+1. Open Spicetify Marketplace
+2. Go to the **Extensions** tab and find Spicy Lyrics
+3. Click **Uninstall**
+
+---
+
+### Step 2 — Install this build manually
+
+1. Make sure [Spicetify](https://spicetify.app) is installed
+2. Download the extension file: **[spicy-lyrics-pixel.mjs](https://ipixelgalaxy.com/TempFiles/spicy-lyrics-pixel.mjs)**
+3. Move the file into your Spicetify Extensions directory
+   - Find the correct path here: [spicetify.app — Manual Installation](https://spicetify.app/docs/customization/extensions#manual-installation)
+   - Or run `spicetify config-dir` to open the path
+4. Run the following commands in your terminal:
+   ```
+   spicetify config extensions spicy-lyrics-pixel.mjs
    spicetify apply
    ```
+
+---
+
+### Step 3 — Connect to the iPixel Dev build channel
+
+Once the plugin is loaded, you need to point it at the dev server:
+
+1. In Spotify, go to **Settings** (the cog icon in the top-right)
+2. Scroll down until you see the **Spicy Lyrics** section
+3. Click **Open Settings**
+4. Scroll to the bottom and find **Build Channel** under the **Advanced** section, then click **Manage**
+5. If the custom channel controls are hidden, right-click the **Build Channel** label seven times quickly to unlock custom channels
+6. Enter `ipixelgalaxy.com` as the server URL
+7. Check the **"Use the same host for both API and Storage"** box
+8. Name the branch something like **`iPixel Dev`**
+9. Click **Save Channel**
+10. Click **Apply & Reload** — Spicy Lyrics will restart on the dev channel
+
 
 ## 🚀 How to Deploy (Vercel)
 
