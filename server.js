@@ -14,8 +14,20 @@ if (!fs.existsSync(LYRICS_DIR)) {
     fs.mkdirSync(LYRICS_DIR);
 }
 
-app.get('/api/lyrics/:id', (req, res) => {
-    const trackId = req.params.id;
+const fsPromises = fs.promises;
+
+async function fileExists(filePath) {
+    try {
+        await fsPromises.access(filePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+app.get('/api/lyrics/:id', async (req, res) => {
+    // Sanitize trackId to prevent path traversal
+    const trackId = path.basename(req.params.id);
     const title = req.query.title;
     const artist = req.query.artist;
 
@@ -32,22 +44,22 @@ app.get('/api/lyrics/:id', (req, res) => {
         lrcByName = path.join(LYRICS_DIR, `${safeArtist} - ${safeTitle}.lrc`);
     }
 
-    if (fs.existsSync(ttmlById)) {
+    if (await fileExists(ttmlById)) {
         res.type('text/xml');
-        return res.send(fs.readFileSync(ttmlById, 'utf8'));
-    } else if (fs.existsSync(lrcById)) {
+        return res.send(await fsPromises.readFile(ttmlById, 'utf8'));
+    } else if (await fileExists(lrcById)) {
         res.type('text/plain');
-        return res.send(fs.readFileSync(lrcById, 'utf8'));
-    } else if (ttmlByName && fs.existsSync(ttmlByName)) {
+        return res.send(await fsPromises.readFile(lrcById, 'utf8'));
+    } else if (ttmlByName && await fileExists(ttmlByName)) {
         res.type('text/xml');
-        return res.send(fs.readFileSync(ttmlByName, 'utf8'));
-    } else if (lrcByName && fs.existsSync(lrcByName)) {
+        return res.send(await fsPromises.readFile(ttmlByName, 'utf8'));
+    } else if (lrcByName && await fileExists(lrcByName)) {
         res.type('text/plain');
-        return res.send(fs.readFileSync(lrcByName, 'utf8'));
+        return res.send(await fsPromises.readFile(lrcByName, 'utf8'));
     }
 
     try {
-        const files = fs.readdirSync(LYRICS_DIR);
+        const files = await fsPromises.readdir(LYRICS_DIR);
         
         // Szukanie po Artyście + Tytule
         if (artist && title) {
@@ -60,10 +72,10 @@ app.get('/api/lyrics/:id', (req, res) => {
                     const p = path.join(LYRICS_DIR, file);
                     if (file.endsWith('.ttml')) {
                         res.type('text/xml');
-                        return res.send(fs.readFileSync(p, 'utf8'));
+                        return res.send(await fsPromises.readFile(p, 'utf8'));
                     } else if (file.endsWith('.lrc')) {
                         res.type('text/plain');
-                        return res.send(fs.readFileSync(p, 'utf8'));
+                        return res.send(await fsPromises.readFile(p, 'utf8'));
                     }
                 }
             }
@@ -79,16 +91,16 @@ app.get('/api/lyrics/:id', (req, res) => {
                     const p = path.join(LYRICS_DIR, file);
                     if (file.endsWith('.ttml')) {
                         res.type('text/xml');
-                        return res.send(fs.readFileSync(p, 'utf8'));
+                        return res.send(await fsPromises.readFile(p, 'utf8'));
                     } else if (file.endsWith('.lrc')) {
                         res.type('text/plain');
-                        return res.send(fs.readFileSync(p, 'utf8'));
+                        return res.send(await fsPromises.readFile(p, 'utf8'));
                     }
                 }
             }
         }
     } catch (e) {
-        console.error(e);
+        console.error('Error reading lyrics directory:', e);
     }
 
     res.status(404).send('Lyrics not found');
