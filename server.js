@@ -60,8 +60,14 @@ setInterval(() => {
 
 const LYRICS_DIR = path.join(__dirname, 'lyrics');
 
-if (!fs.existsSync(LYRICS_DIR)) {
-    fs.mkdirSync(LYRICS_DIR);
+try {
+    if (!fs.existsSync(LYRICS_DIR)) {
+        if (!process.env.VERCEL) {
+            fs.mkdirSync(LYRICS_DIR);
+        }
+    }
+} catch (e) {
+    console.warn("Nie mozna utworzyc folderu lyrics (prawdopodobnie chmura read-only):", e.message);
 }
 
 const fsPromises = fs.promises;
@@ -123,7 +129,12 @@ app.get('/api/lyrics/:id', async (req, res) => {
         }
 
         // 3 & 4. Fuzzy search in the lyrics directory
-        const files = await fsPromises.readdir(LYRICS_DIR);
+        let files = [];
+        try {
+            files = await fsPromises.readdir(LYRICS_DIR);
+        } catch (err) {
+            // Directory doesn't exist on Vercel
+        }
 
         // 3. Fuzzy search by Artist + Title
         if (artist && title) {
