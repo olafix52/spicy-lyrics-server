@@ -2,9 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
+const { put, list } = require('@vercel/blob');
 
 const app = express();
 const PORT = 3000;
+
+// Multer in-memory storage for file uploads
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Restrict CORS to Spotify and local development origins
 const allowedOrigins = [
@@ -31,6 +36,9 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 60;
 
 app.use((req, res, next) => {
+    // Skip rate limiting for admin panel upload actions
+    if (req.path === '/api/upload') return next();
+
     const ip = req.ip || req.connection.remoteAddress;
     const now = Date.now();
     const entry = rateLimit.get(ip);
@@ -101,6 +109,49 @@ app.get('/', (req, res) => {
     res.send('<html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;"><h1>Spicy Lyrics Server jest aktywny! 🌶️</h1><p>Twój serwer działa poprawnie. Użyj wtyczki Spicy Lyrics w Spotify, aby z niego korzystać.</p></body></html>');
 });
 
+// ADMIN PANEL ROUTES
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+app.post('/api/upload', upload.array('files'), async (req, res) => {
+    try {
+        const password = req.headers.authorization;
+        const correctPassword = process.env.ADMIN_PASSWORD;
+
+        if (!correctPassword) {
+            return res.status(500).json({ error: 'Brak zmiennej ADMIN_PASSWORD na serwerze.' });
+        }
+        if (password !== correctPassword) {
+            return res.status(401).json({ error: 'Nieprawidłowe hasło.' });
+        }
+
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'Nie przesłano plików.' });
+        }
+
+        const uploads = [];
+        for (const file of req.files) {
+            if (!file.originalname.endsWith('.lrc') && !file.originalname.endsWith('.ttml')) {
+                continue;
+            }
+            
+            // Upload to Vercel Blob
+            const blob = await put(file.originalname, file.buffer, { 
+                access: 'public',
+                addRandomSuffix: false // Nadpisuje istniejące pliki o tej samej nazwie
+            });
+            uploads.push(blob.url);
+        }
+
+        res.json({ success: true, uploaded: uploads.length });
+    } catch (e) {
+        console.error('Upload error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// MAIN LYRICS API
 app.get('/api/lyrics/:id', async (req, res) => {
     try {
         // Sanitize trackId to prevent path traversal
@@ -128,7 +179,7 @@ app.get('/api/lyrics/:id', async (req, res) => {
             if (await sendLyricsFile(lrcByName, 'text/plain', res)) return;
         }
 
-        // 3 & 4. Fuzzy search in the lyrics directory
+        // 3 & 4. Fuzzy search in the local lyrics directory
         let files = [];
         try {
             files = await fsPromises.readdir(LYRICS_DIR);
@@ -136,7 +187,7 @@ app.get('/api/lyrics/:id', async (req, res) => {
             // Directory doesn't exist on Vercel
         }
 
-        // 3. Fuzzy search by Artist + Title
+        // 3. Local Fuzzy search by Artist + Title
         if (artist && title) {
             const searchStr1 = `${artist} ${title}`.toLowerCase().replace(/[^a-z0-9]/g, '');
             const searchStr2 = `${title} ${artist}`.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -151,7 +202,7 @@ app.get('/api/lyrics/:id', async (req, res) => {
             }
         }
 
-        // 4. Fuzzy search by Title only
+        // 4. Local Fuzzy search by Title only
         if (title) {
             const titleStr = title.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -165,6 +216,75 @@ app.get('/api/lyrics/:id', async (req, res) => {
             }
         }
 
+        // ----------------------------------------------------
+        // 5. BLOB STORAGE FALLBACK
+        // Jeśli nie znaleziono lokalnie, szukaj w chmurze
+        // ----------------------------------------------------
+        try {
+            const { blobs } = await list();
+            
+            // 5a. Exact match
+            const exactTtml = blobs.find(b => b.pathname === `${trackId}.ttml`);
+            if (exactTtml) {
+                const fetchRes = await fetch(exactTtml.url);
+                res.type('text/xml');
+                return res.send(await fetchRes.text());
+            }
+            const exactLrc = blobs.find(b => b.pathname === `${trackId}.lrc`);
+            if (exactLrc) {
+                const fetchRes = await fetch(exactLrc.url);
+                res.type('text/plain');
+                return res.send(await fetchRes.text());
+            }
+
+            // 5b. Artist - Title match
+            if (artist && title) {
+                const safeArtist = path.basename(artist.replace(/[/\\?%*:|"<>]/g, ''));
+                const safeTitle = path.basename(title.replace(/[/\\?%*:|"<>]/g, ''));
+                
+                const byNameTtml = blobs.find(b => b.pathname === `${safeArtist} - ${safeTitle}.ttml`);
+                if (byNameTtml) {
+                    const fetchRes = await fetch(byNameTtml.url);
+                    res.type('text/xml');
+                    return res.send(await fetchRes.text());
+                }
+                const byNameLrc = blobs.find(b => b.pathname === `${safeArtist} - ${safeTitle}.lrc`);
+                if (byNameLrc) {
+                    const fetchRes = await fetch(byNameLrc.url);
+                    res.type('text/plain');
+                    return res.send(await fetchRes.text());
+                }
+            }
+
+            // 5c. Fuzzy match in Blob
+            if (artist && title) {
+                const searchStr1 = `${artist} ${title}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const searchStr2 = `${title} ${artist}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                for (const b of blobs) {
+                    const fileClean = b.pathname.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (fileClean.includes(searchStr1) || fileClean.includes(searchStr2)) {
+                        const fetchRes = await fetch(b.url);
+                        res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
+                        return res.send(await fetchRes.text());
+                    }
+                }
+            } else if (title) {
+                const titleStr = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+                for (const b of blobs) {
+                    const fileClean = b.pathname.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (fileClean.includes(titleStr)) {
+                        const fetchRes = await fetch(b.url);
+                        res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
+                        return res.send(await fetchRes.text());
+                    }
+                }
+            }
+
+        } catch (err) {
+            console.error('Blob search error:', err);
+        }
+
         res.status(404).send('Lyrics not found');
     } catch (e) {
         console.error('Error handling lyrics request:', e);
@@ -174,8 +294,8 @@ app.get('/api/lyrics/:id', async (req, res) => {
 
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Serwer z tekstami piosenek dzia\u0142a pod adresem: http://localhost:${PORT}`);
-        console.log(`Wrzu\u0107 pliki ${'<ID>'}.lrc lub ${'<ID>'}.ttml do folderu: ${LYRICS_DIR}`);
+        console.log(`Serwer z tekstami piosenek działa pod adresem: http://localhost:${PORT}`);
+        console.log(`Wrzuć pliki ${'<ID>'}.lrc lub ${'<ID>'}.ttml do folderu: ${LYRICS_DIR}`);
     });
 }
 

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spicy Lyrics Server - Admin</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #ffffff;
+            --text-secondary: #a7a7a7;
+            --accent: #1db954; /* Spotify green */
+            --accent-hover: #1ed760;
+            --error: #e22134;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            background-color: #2a2a2a;
+            border: 1px solid #333;
+            color: white;
+            border-radius: 6px;
+            box-sizing: border-box;
+            outline: none;
+            font-family: inherit;
+        }
+
+        input[type="password"]:focus {
+            border-color: var(--accent);
+        }
+
+        .drop-zone {
+            border: 2px dashed #333;
+            border-radius: 8px;
+            padding: 40px 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 20px;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--accent);
+            background-color: rgba(29, 185, 84, 0.05);
+        }
+
+        .drop-zone-text {
+            pointer-events: none;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background-color: var(--accent);
+            color: black;
+            border: none;
+            border-radius: 500px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+        }
+
+        button:disabled {
+            background-color: #333;
+            color: #777;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 16px;
+            font-size: 14px;
+            height: 20px;
+        }
+        .success { color: var(--accent); }
+        .error { color: var(--error); }
+
+        .file-list {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--accent);
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Spicy Lyrics Admin 🌶️</h1>
+    <p>Wgraj pliki .lrc lub .ttml do chmury</p>
+
+    <div class="input-group">
+        <label for="password">Hasło administratora</label>
+        <input type="password" id="password" placeholder="Wprowadź hasło z Vercela...">
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-text">
+            Przeciągnij pliki tutaj lub <strong>kliknij</strong> aby wybrać.
+        </div>
+        <div class="file-list" id="file-list"></div>
+    </div>
+    <input type="file" id="file-input" multiple accept=".lrc,.ttml">
+
+    <button id="upload-btn" disabled>Wgraj do chmury</button>
+    <div id="status"></div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const uploadBtn = document.getElementById('upload-btn');
+    const statusDiv = document.getElementById('status');
+    const fileListDiv = document.getElementById('file-list');
+    const passwordInput = document.getElementById('password');
+
+    let selectedFiles = [];
+
+    // LocalStorage for password
+    if (localStorage.getItem('adminPassword')) {
+        passwordInput.value = localStorage.getItem('adminPassword');
+    }
+    passwordInput.addEventListener('input', () => {
+        localStorage.setItem('adminPassword', passwordInput.value);
+    });
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+    });
+
+    function handleFiles(files) {
+        selectedFiles = Array.from(files).filter(f => f.name.endsWith('.lrc') || f.name.endsWith('.ttml'));
+        if (selectedFiles.length > 0) {
+            fileListDiv.innerHTML = selectedFiles.map(f => f.name).join('<br>');
+            uploadBtn.disabled = false;
+        } else {
+            fileListDiv.innerHTML = '';
+            uploadBtn.disabled = true;
+            showStatus('Brak prawidłowych plików.', false);
+        }
+    }
+
+    function showStatus(msg, isSuccess) {
+        statusDiv.textContent = msg;
+        statusDiv.className = isSuccess ? 'success' : 'error';
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+        const password = passwordInput.value.trim();
+        if (!password) {
+            return showStatus('Wprowadź hasło!', false);
+        }
+
+        uploadBtn.disabled = true;
+        showStatus('Wgrywanie...', true);
+
+        const formData = new FormData();
+        selectedFiles.forEach(f => formData.append('files', f));
+
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': password
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showStatus('Sukces! Pliki wgrane do chmury.', true);
+                selectedFiles = [];
+                fileListDiv.innerHTML = '';
+            } else {
+                showStatus('Błąd: ' + (result.error || 'Nieznany błąd'), false);
+                uploadBtn.disabled = false;
+            }
+        } catch (e) {
+            showStatus('Błąd sieci: ' + e.message, false);
+            uploadBtn.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
