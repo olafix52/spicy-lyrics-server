@@ -64,7 +64,7 @@ setInterval(() => {
             rateLimit.delete(ip);
         }
     }
-}, 5 * 60 * 1000);
+} , 5 * 60 * 1000);
 
 const LYRICS_DIR = path.join(__dirname, 'lyrics');
 
@@ -189,12 +189,12 @@ app.get('/api/lyrics/:id', async (req, res) => {
 
         // 3. Local Fuzzy search by Artist + Title
         if (artist && title) {
-            const searchStr1 = `${artist} ${title}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const searchStr2 = `${title} ${artist}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const titleClean = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const artists = artist.split(',').map(a => a.toLowerCase().replace(/[^a-z0-9]/g, ''));
 
             for (const file of files) {
                 const fileClean = file.toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (fileClean.includes(searchStr1) || fileClean.includes(searchStr2)) {
+                if (fileClean.includes(titleClean) && artists.some(a => fileClean.includes(a))) {
                     const p = path.join(LYRICS_DIR, file);
                     if (file.endsWith('.ttml') && await sendLyricsFile(p, 'text/xml', res)) return;
                     if (file.endsWith('.lrc') && await sendLyricsFile(p, 'text/plain', res)) return;
@@ -258,12 +258,12 @@ app.get('/api/lyrics/:id', async (req, res) => {
 
             // 5c. Fuzzy match in Blob
             if (artist && title) {
-                const searchStr1 = `${artist} ${title}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-                const searchStr2 = `${title} ${artist}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const titleClean = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const artists = artist.split(',').map(a => a.toLowerCase().replace(/[^a-z0-9]/g, ''));
 
                 for (const b of blobs) {
                     const fileClean = b.pathname.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    if (fileClean.includes(searchStr1) || fileClean.includes(searchStr2)) {
+                    if (fileClean.includes(titleClean) && artists.some(a => fileClean.includes(a))) {
                         const fetchRes = await fetch(b.url);
                         res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
                         return res.send(await fetchRes.text());
