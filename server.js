@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -9,7 +10,14 @@ const app = express();
 const PORT = 3000;
 
 // Multer in-memory storage for file uploads
-const upload = multer({ storage: multer.memoryStorage() });
+// Limit: max 10 files, max 5MB each
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB per file
+        files: 10
+    }
+});
 
 // Restrict CORS to Spotify and local development origins
 const allowedOrigins = [
@@ -34,22 +42,25 @@ app.use(cors({
 const rateLimit = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 60;
+const UPLOAD_RATE_LIMIT_MAX = 10; // Stricter limit for uploads
 
 app.use((req, res, next) => {
-    // Skip rate limiting for admin panel upload actions
-    if (req.path === '/api/upload') return next();
-
     const ip = req.ip || req.connection.remoteAddress;
     const now = Date.now();
-    const entry = rateLimit.get(ip);
+
+    // Use separate keys for upload vs regular requests
+    const key = req.path === '/api/upload' ? `upload:${ip}` : ip;
+    const max = req.path === '/api/upload' ? UPLOAD_RATE_LIMIT_MAX : RATE_LIMIT_MAX;
+
+    const entry = rateLimit.get(key);
 
     if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-        rateLimit.set(ip, { windowStart: now, count: 1 });
+        rateLimit.set(key, { windowStart: now, count: 1 });
         return next();
     }
 
     entry.count++;
-    if (entry.count > RATE_LIMIT_MAX) {
+    if (entry.count > max) {
         return res.status(429).json({ error: 'Too many requests. Try again later.' });
     }
 
@@ -57,14 +68,17 @@ app.use((req, res, next) => {
 });
 
 // Cleanup stale rate limit entries every 5 minutes
-setInterval(() => {
-    const now = Date.now();
-    for (const [ip, entry] of rateLimit) {
-        if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-            rateLimit.delete(ip);
+// Only run on non-serverless environments
+if (!process.env.VERCEL) {
+    setInterval(() => {
+        const now = Date.now();
+        for (const [key, entry] of rateLimit) {
+            if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+                rateLimit.delete(key);
+            }
         }
-    }
-}, 5 * 60 * 1000);
+    }, 5 * 60 * 1000);
+}
 
 const LYRICS_DIR = path.join(__dirname, 'lyrics');
 
@@ -105,6 +119,42 @@ async function sendLyricsFile(filePath, type, res) {
     return false;
 }
 
+// Timing-safe password comparison to prevent timing attacks
+function verifyPassword(provided, correct) {
+    if (!provided || !correct) return false;
+    const a = Buffer.from(provided);
+    const b = Buffer.from(correct);
+    if (a.length !== b.length) {
+        // Still run timingSafeEqual with equal-length buffers to prevent
+        // leaking length information through timing
+        crypto.timingSafeEqual(a, Buffer.alloc(a.length));
+        return false;
+    }
+    return crypto.timingSafeEqual(a, b);
+}
+
+// Sanitize filename: remove path traversal and dangerous characters
+function sanitizeFilename(name) {
+    // Strip directory components
+    let safe = path.basename(name);
+    // Remove null bytes
+    safe = safe.replace(/\0/g, '');
+    // Keep only safe characters: letters, digits, spaces, hyphens, underscores, dots, parentheses
+    safe = safe.replace(/[^a-zA-Z0-9\s\-_.()À-ɏЀ-ӿ　-鿿가-힯]/g, '');
+    return safe || 'unnamed';
+}
+
+// Safely fetch content from a Blob URL, returning null on failure
+async function safeFetchBlob(url) {
+    try {
+        const fetchRes = await fetch(url);
+        if (!fetchRes.ok) return null;
+        return await fetchRes.text();
+    } catch {
+        return null;
+    }
+}
+
 app.get('/', (req, res) => {
     res.send('<html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;"><h1>Spicy Lyrics Server jest aktywny! 🌶️</h1><p>Twój serwer działa poprawnie. Użyj wtyczki Spicy Lyrics w Spotify, aby z niego korzystać.</p></body></html>');
 });
@@ -122,7 +172,7 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
         if (!correctPassword) {
             return res.status(500).json({ error: 'Brak zmiennej ADMIN_PASSWORD na serwerze.' });
         }
-        if (password !== correctPassword) {
+        if (!verifyPassword(password, correctPassword)) {
             return res.status(401).json({ error: 'Nieprawidłowe hasło.' });
         }
 
@@ -132,12 +182,13 @@ app.post('/api/upload', upload.array('files'), async (req, res) => {
 
         const uploads = [];
         for (const file of req.files) {
-            if (!file.originalname.endsWith('.lrc') && !file.originalname.endsWith('.ttml')) {
+            const safeName = sanitizeFilename(file.originalname);
+            if (!safeName.endsWith('.lrc') && !safeName.endsWith('.ttml')) {
                 continue;
             }
             
             // Upload to Vercel Blob
-            const blob = await put(file.originalname, file.buffer, { 
+            const blob = await put(safeName, file.buffer, { 
                 access: 'public',
                 addRandomSuffix: false // Nadpisuje istniejące pliki o tej samej nazwie
             });
@@ -226,15 +277,19 @@ app.get('/api/lyrics/:id', async (req, res) => {
             // 5a. Exact match
             const exactTtml = blobs.find(b => b.pathname === `${trackId}.ttml`);
             if (exactTtml) {
-                const fetchRes = await fetch(exactTtml.url);
-                res.type('text/xml');
-                return res.send(await fetchRes.text());
+                const content = await safeFetchBlob(exactTtml.url);
+                if (content !== null) {
+                    res.type('text/xml');
+                    return res.send(content);
+                }
             }
             const exactLrc = blobs.find(b => b.pathname === `${trackId}.lrc`);
             if (exactLrc) {
-                const fetchRes = await fetch(exactLrc.url);
-                res.type('text/plain');
-                return res.send(await fetchRes.text());
+                const content = await safeFetchBlob(exactLrc.url);
+                if (content !== null) {
+                    res.type('text/plain');
+                    return res.send(content);
+                }
             }
 
             // 5b. Artist - Title match
@@ -244,15 +299,19 @@ app.get('/api/lyrics/:id', async (req, res) => {
                 
                 const byNameTtml = blobs.find(b => b.pathname === `${safeArtist} - ${safeTitle}.ttml`);
                 if (byNameTtml) {
-                    const fetchRes = await fetch(byNameTtml.url);
-                    res.type('text/xml');
-                    return res.send(await fetchRes.text());
+                    const content = await safeFetchBlob(byNameTtml.url);
+                    if (content !== null) {
+                        res.type('text/xml');
+                        return res.send(content);
+                    }
                 }
                 const byNameLrc = blobs.find(b => b.pathname === `${safeArtist} - ${safeTitle}.lrc`);
                 if (byNameLrc) {
-                    const fetchRes = await fetch(byNameLrc.url);
-                    res.type('text/plain');
-                    return res.send(await fetchRes.text());
+                    const content = await safeFetchBlob(byNameLrc.url);
+                    if (content !== null) {
+                        res.type('text/plain');
+                        return res.send(content);
+                    }
                 }
             }
 
@@ -264,9 +323,11 @@ app.get('/api/lyrics/:id', async (req, res) => {
                 for (const b of blobs) {
                     const fileClean = b.pathname.toLowerCase().replace(/[^a-z0-9]/g, '');
                     if (fileClean.includes(titleClean) && artists.some(a => fileClean.includes(a))) {
-                        const fetchRes = await fetch(b.url);
-                        res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
-                        return res.send(await fetchRes.text());
+                        const content = await safeFetchBlob(b.url);
+                        if (content !== null) {
+                            res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
+                            return res.send(content);
+                        }
                     }
                 }
             }
@@ -277,9 +338,11 @@ app.get('/api/lyrics/:id', async (req, res) => {
                 for (const b of blobs) {
                     const fileClean = b.pathname.toLowerCase().replace(/[^a-z0-9]/g, '');
                     if (fileClean.includes(titleStr)) {
-                        const fetchRes = await fetch(b.url);
-                        res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
-                        return res.send(await fetchRes.text());
+                        const content = await safeFetchBlob(b.url);
+                        if (content !== null) {
+                            res.type(b.pathname.endsWith('.ttml') ? 'text/xml' : 'text/plain');
+                            return res.send(content);
+                        }
                     }
                 }
             }

@@ -169,12 +169,12 @@
 
     let selectedFiles = [];
 
-    // LocalStorage for password
-    if (localStorage.getItem('adminPassword')) {
-        passwordInput.value = localStorage.getItem('adminPassword');
+    // Use sessionStorage instead of localStorage for password (cleared on tab close)
+    if (sessionStorage.getItem('adminPassword')) {
+        passwordInput.value = sessionStorage.getItem('adminPassword');
     }
     passwordInput.addEventListener('input', () => {
-        localStorage.setItem('adminPassword', passwordInput.value);
+        sessionStorage.setItem('adminPassword', passwordInput.value);
     });
 
     dropZone.addEventListener('click', () => fileInput.click());
@@ -201,10 +201,10 @@
     function handleFiles(files) {
         selectedFiles = Array.from(files).filter(f => f.name.endsWith('.lrc') || f.name.endsWith('.ttml'));
         if (selectedFiles.length > 0) {
-            fileListDiv.innerHTML = selectedFiles.map(f => f.name).join('<br>');
+            fileListDiv.textContent = selectedFiles.map(f => f.name).join(', ');
             uploadBtn.disabled = false;
         } else {
-            fileListDiv.innerHTML = '';
+            fileListDiv.textContent = '';
             uploadBtn.disabled = true;
             showStatus('Brak prawidłowych plików.', false);
         }
@@ -239,9 +239,11 @@
             const result = await response.json();
 
             if (response.ok) {
-                showStatus('Sukces! Pliki wgrane do chmury.', true);
+                showStatus(`Sukces! Wgrano ${result.uploaded} plik(ów) do chmury.`, true);
                 selectedFiles = [];
-                fileListDiv.innerHTML = '';
+                fileListDiv.textContent = '';
+                // Re-enable button so user can upload more files without refreshing
+                uploadBtn.disabled = true; // disabled because selectedFiles is now empty
             } else {
                 showStatus('Błąd: ' + (result.error || 'Nieznany błąd'), false);
                 uploadBtn.disabled = false;
