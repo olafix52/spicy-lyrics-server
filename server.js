@@ -91,6 +91,10 @@ async function sendLyricsFile(filePath, type, res) {
     return false;
 }
 
+app.get('/', (req, res) => {
+    res.send('<html><body style="font-family: sans-serif; text-align: center; margin-top: 50px;"><h1>Spicy Lyrics Server jest aktywny! 🌶️</h1><p>Twój serwer działa poprawnie. Użyj wtyczki Spicy Lyrics w Spotify, aby z niego korzystać.</p></body></html>');
+});
+
 app.get('/api/lyrics/:id', async (req, res) => {
     try {
         // Sanitize trackId to prevent path traversal
