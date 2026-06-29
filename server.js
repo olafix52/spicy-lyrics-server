@@ -64,7 +64,7 @@ setInterval(() => {
             rateLimit.delete(ip);
         }
     }
-} , 5 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 const LYRICS_DIR = path.join(__dirname, 'lyrics');
 
@@ -269,7 +269,10 @@ app.get('/api/lyrics/:id', async (req, res) => {
                         return res.send(await fetchRes.text());
                     }
                 }
-            } else if (title) {
+            }
+            
+            // 5d. Fuzzy match in Blob by Title only
+            if (title) {
                 const titleStr = title.toLowerCase().replace(/[^a-z0-9]/g, '');
                 for (const b of blobs) {
                     const fileClean = b.pathname.toLowerCase().replace(/[^a-z0-9]/g, '');
