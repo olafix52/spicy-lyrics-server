@@ -5,9 +5,22 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { put, list } = require('@vercel/blob');
+const helmet = require('helmet');
 
 const app = express();
 const PORT = 3000;
+
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"]
+        }
+    }
+}));
 
 // Multer in-memory storage for file uploads
 // Limit: max 10 files, max 5MB each
@@ -140,7 +153,7 @@ function sanitizeFilename(name) {
     // Remove null bytes
     safe = safe.replace(/\0/g, '');
     // Keep only safe characters: letters, digits, spaces, hyphens, underscores, dots, parentheses
-    safe = safe.replace(/[^a-zA-Z0-9\s\-_.()À-ɏЀ-ӿ　-鿿가-힯]/g, '');
+    safe = safe.replace(/[^a-zA-Z0-9\s\-_.()\u00C0-\u024F\u0400-\u04FF\u3000-\u9FFF\uAC00-\uD7AF]/g, '');
     return safe || 'unnamed';
 }
 
